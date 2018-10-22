@@ -1,3 +1,5 @@
+package com.github.akka_streams_samples
+
 import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
@@ -40,12 +42,13 @@ object TweetAPI extends App {
 
   def handleTags (tag: Hashtag): Future[String] = Future {tag.name.toUpperCase}
   def showTags (t: String): Future[Unit] = Future { println(t)}
-
+/*
   val graph: RunnableGraph[NotUsed] = tweets.map(t => t.hashtags)
     .reduce((s1,s2) => s1++s2)
     .mapConcat(x=>x)
     .mapAsyncUnordered(4)(handleTags)
-    .to(Sink.foreachAsync(4)(showTags))
+    .to(Sink.foreachAsync(4)(showTags))*/
 
+ val graph = GraphDSLSample.graph
  graph.run()(materializer)
 }

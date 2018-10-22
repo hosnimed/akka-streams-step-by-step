@@ -1,11 +1,13 @@
+package com.github.akka_streams_samples
+
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
-import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
-import akka.stream.{ActorMaterializer, IOResult}
 import akka.stream.scaladsl._
+import akka.stream.{ActorMaterializer, IOResult}
 import akka.util.ByteString
+import akka.{Done, NotUsed}
 
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration
