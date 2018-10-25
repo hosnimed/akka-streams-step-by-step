@@ -5,9 +5,10 @@ import java.util.concurrent.TimeUnit
 
 import akka.actor.ActorSystem
 import akka.stream.scaladsl._
-import akka.stream.{ActorMaterializer, IOResult}
+import akka.stream.{ActorMaterializer, IOResult, OverflowStrategy}
 import akka.util.ByteString
 import akka.{Done, NotUsed}
+import com.github.akka_streams_samples.TweetAPI.Author
 
 import scala.concurrent._
 import scala.concurrent.duration.FiniteDuration

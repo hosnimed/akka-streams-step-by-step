@@ -1,9 +1,10 @@
 package com.github.akka_streams_samples
 
 import akka.{Done, NotUsed}
-import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{RunnableGraph, Sink, Source}
+import akka.actor.{ActorSystem, Cancellable, Identify}
+import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
+import com.github.akka_streams_samples.Main.materializer
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -49,6 +50,45 @@ object TweetAPI extends App {
     .mapAsyncUnordered(4)(handleTags)
     .to(Sink.foreachAsync(4)(showTags))*/
 
- val graph = GraphDSLSample.graph
- graph.run()(materializer)
+/* graph.run()(materializer)*/
+
+  //#tweets-slow-consumption-dropHead
+  def heavyComputation(tweet : Tweet): Future[String] = Future{
+    Thread.sleep(500)
+    tweet.author.name.toStream.collect{
+      case c if c.toInt > 65 => c.toUpper
+    }.mkString
+  }
+  def slowComputation(tweet : Tweet): Flow[Tweet, Author, NotUsed] = Flow[Tweet].map(t => t.author)
+
+  def foreach[T](f: T ⇒ Unit): Sink[T, Future[Done]] =
+    Flow[T]
+      .map(f)
+      .toMat(Sink.ignore)(Keep.right)
+
+  def printAuthor(): Sink[Author, NotUsed] =
+    Flow[Author]
+        .to(foreach(a => println(a.name)))
+
+  val flow: Flow[Tweet, Author, NotUsed] =
+    Flow[Tweet]
+    .map(t=>{
+     Author(t.author.name.toUpperCase)
+      })
+      .filterNot(a => a.name.startsWith("M"))
+
+  val sink: Sink[Author, Future[Done]] = Sink.foreach(a =>println(a.name))
+
+  val source: Source[Author, NotUsed] = tweets.via(flow)
+
+  val runnable1 :RunnableGraph[Future[Done]] = source.toMat(sink)(Keep.right)
+
+  val runnable2 : RunnableGraph[NotUsed] =
+    source
+      .buffer(10 , OverflowStrategy.dropHead)
+      .toMat(printAuthor)(Keep.right)
+
+  val done = runnable2.run()
+
+  //  done.onComplete(_ => system.terminate())
 }

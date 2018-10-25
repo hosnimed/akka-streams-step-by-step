@@ -7,7 +7,7 @@ import com.github.akka_streams_samples.TweetAPI._
 
 import scala.concurrent.Future
 
-object GraphDSLSample {
+object aphDSLSample {
 
   object HiddenDefinitions {
     //#graph-dsl-broadcast
