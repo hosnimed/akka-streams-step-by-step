@@ -1,11 +1,14 @@
 package com.github.akka_streams_samples
 
+import java.util.concurrent.atomic.AtomicInteger
+
 import akka.{Done, NotUsed}
 import akka.actor.{ActorSystem, Cancellable, Identify}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
 import com.github.akka_streams_samples.Main.materializer
 
+import scala.concurrent.duration.Duration
 import scala.concurrent.{ExecutionContext, Future}
 
 object TweetAPI extends App {
@@ -88,7 +91,47 @@ object TweetAPI extends App {
       .buffer(10 , OverflowStrategy.dropHead)
       .toMat(printAuthor)(Keep.right)
 
-  val done = runnable2.run()
-
   //  done.onComplete(_ => system.terminate())
+  //  val done = runnable2.run()
+
+  /**
+    * defining asynchronous boundaries
+    */
+  def add(x: Int, y: Int) = {
+    Thread.sleep(1000)
+    x + y
+  }
+  def mult(x: Int, y: Int) = {
+    Thread.sleep(1000)
+    x * y
+  }
+   val runnable3 : RunnableGraph[Future[Int]]=
+    Source(List(1,2,3,4,5,6,7,8,9))
+      .map(x => add(x, 10)).async
+      .map(x => mult(x, 2))
+      .toMat(Sink.reduce((x,y)=>add(x,y)))(Keep.right)
+    val runnable4 : RunnableGraph[Future[Int]]=
+    Source(List(1,2,3,4,5,6,7,8,9))
+      .map(x => add(x, 10))
+      .map(x => mult(x, 2))
+      .toMat(Sink.reduce((x,y)=>add(x,y)))(Keep.right)
+
+  var start = System.currentTimeMillis()
+  var finish = 0L
+  runnable3.run().onComplete(r =>{
+    println(s"RunnableGraph 3 :  ${r}")
+    finish = System.currentTimeMillis()
+    val duration1 = Duration.fromNanos(finish - start)
+    println(duration1)
+    system.terminate()
+  })
+  start = System.currentTimeMillis()
+  finish = 0L
+  runnable4.run().onComplete(r =>{
+    println(s"RunnableGraph 4 :  ${r}")
+    finish = System.currentTimeMillis()
+    val duration2 = Duration.fromNanos(finish - start)
+    println(duration2)
+    system.terminate()
+  })
 }
