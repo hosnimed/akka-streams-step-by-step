@@ -3,7 +3,7 @@ package com.github.akka_streams_samples
 import java.util.concurrent.atomic.AtomicInteger
 
 import akka.{Done, NotUsed}
-import akka.actor.{ActorSystem, Cancellable, Identify}
+import akka.actor.{ActorRef, ActorSystem, Cancellable, Identify}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
 import com.github.akka_streams_samples.Main.materializer
@@ -116,7 +116,7 @@ object TweetAPI extends App {
       .map(x => mult(x, 2))
       .toMat(Sink.reduce((x,y)=>add(x,y)))(Keep.right)
 
-  var start = System.currentTimeMillis()
+ /* var start = System.currentTimeMillis()
   var finish = 0L
   runnable3.run().onComplete(r =>{
     println(s"RunnableGraph 3 :  ${r}")
@@ -133,5 +133,11 @@ object TweetAPI extends App {
     val duration2 = Duration.fromNanos(finish - start)
     println(duration2)
     system.terminate()
-  })
+  })*/
+
+  //# PreMaterialized  Source
+  val preMaterializedValues: Source[String, ActorRef] = Source.actorRef[String](bufferSize = 10, overflowStrategy = OverflowStrategy.fail)
+  val (actorRef, sourcePreMaterialized) = preMaterializedValues.preMaterialize()
+  actorRef ! "Start!"
+  sourcePreMaterialized.runWith(Sink.foreach(println)).onComplete(_ => system.terminate())
 }
