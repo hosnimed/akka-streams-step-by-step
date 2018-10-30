@@ -96,7 +96,7 @@ object GraphDSLSample extends App {
     ClosedShape
   })
 
-  val (hFuture, mFuture, bFuture) = graph3.run()(materializer)
+ /* val (hFuture, mFuture, bFuture) = graph3.run()(materializer)
     hFuture.onComplete(t => {
       println(s"hFuture : $t")
       system.terminate()
@@ -108,6 +108,23 @@ object GraphDSLSample extends App {
     bFuture.onComplete(t => {
       println(s"bFuture : $t")
       system.terminate()
-    })
+    })*/
+
+  //  #partial-graph
+
+  //# simple fan-in
+    val pickMax = GraphDSL.create(){implicit b =>
+      import GraphDSL.Implicits._
+
+      val zip1 = b.add(ZipWith[Int,Int,Int](Integer.sum(_,_))) // 2 in, 1 out
+      val zip2 = b.add(ZipWith[Int,Int,Int](Integer.sum(_,_))) // 2 in, 1 out
+      zip2
+
+    }
+
+  //  partial-graph#
+  //#graph-dsl-components-shape
+  
+  //graph-dsl-components-shape#
 
 }
