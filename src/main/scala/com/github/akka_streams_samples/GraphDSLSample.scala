@@ -2,10 +2,11 @@ package com.github.akka_streams_samples
 
 import akka.actor.ActorSystem
 import akka.{Done, NotUsed}
-import akka.stream.{ActorMaterializer, ClosedShape}
+import akka.stream._
 import akka.stream.scaladsl._
 import com.github.akka_streams_samples.TweetAPI._
 
+import scala.collection.immutable
 import scala.concurrent.{ExecutionContext, Future}
 
 object GraphDSLSample extends App {
@@ -113,18 +114,112 @@ object GraphDSLSample extends App {
   //  #partial-graph
 
   //# simple fan-in
-    val pickMax = GraphDSL.create(){implicit b =>
+  /*  val pickMax = GraphDSL.create(){implicit b =>
       import GraphDSL.Implicits._
 
-      val zip1 = b.add(ZipWith[Int,Int,Int](Integer.sum(_,_))) // 2 in, 1 out
-      val zip2 = b.add(ZipWith[Int,Int,Int](Integer.sum(_,_))) // 2 in, 1 out
+      val zip1 = b.add(ZipWith[Int,Int,Int](Integer.sum)) // 2 in, 1 out
+      val zip2 = b.add(ZipWith[Int,Int,Int](Integer.sum)) // 2 in, 1 out
       zip2
 
-    }
+    }*/
 
   //  partial-graph#
+
+  /**
+    * Source -->    taskIn -> MergePref.in(0)                                   Balance.out(0) -> in.worker.out -> in(0).MergeResult
+    *                                            } MergePref.out ~> in.Balance {                                                    } MergeResult.out ~> Sink.foreach(println)
+    * Source -->priorTaskIn-> MergePref.preferred                               Balance.out(n) -> in.worker.out -> in(n).MergeResult
+    *
+    */
+
   //#graph-dsl-components-shape
-  
+  case class PriorityWorkerTaskShape[In, Out] (
+                                            tasksIn: Inlet[In],
+                                            priorTasks: Inlet[In],
+                                            resultOut: Outlet[Out]) extends Shape {
+
+    override def inlets: immutable.Seq[Inlet[_]] = tasksIn :: priorTasks :: Nil
+
+    override def outlets: immutable.Seq[Outlet[_]] = resultOut :: Nil
+
+    override def deepCopy(): Shape = PriorityWorkerTaskShape (
+      tasksIn.carbonCopy(),
+      priorTasks.carbonCopy(),
+      resultOut.carbonCopy()
+    )
+  }
+  // Another short way to do create the Shape using predefined FanInShape
+  /*class PriorityWorkerFanInShape[In, Out]
+    (_init: FanInShape.Init[Out] = FanInShape.Name("PriorityWorkerFanInWorkerPool"))
+    extends FanInShape[Out](_init){
+
+    override protected def construct(init: FanInShape.Init[Out]): FanInShape[Out] = new PriorityWorkerFanInShape(init)
+
+    val tasksIn = new Inlet[In]("Tasks")
+    val priorTasks = new Inlet[In]("PriorTasks")
+    //out will be auto created FanInShape[...,Out]
+  }*/
+  // Wire up the Graph
+  object PriorityWorkerTaskPool {
+    def apply[In, Out](
+                        // simple worker flow
+                        worker: Flow[In, Out, Any],
+                        numberOfWorker: Int): Graph[PriorityWorkerTaskShape[In, Out], NotUsed] = {
+
+      GraphDSL.create() { implicit b =>
+        import GraphDSL.Implicits._
+
+        //First, we will merge incoming normal and priority jobs using MergePreferred
+        val priorMerge = b.add(MergePreferred[In](1))
+        //then we will send the jobs to a Balance junction which will fan-out to a configurable number of workers (flows)
+        val balance = b.add(Balance[In](numberOfWorker))
+        //finally we merge all these results together and send them out through our only output port
+        val mergedResult = b.add(Merge[Out](numberOfWorker))
+
+        //after merging prior and normal tasks, send them to balance (fan-out)
+        priorMerge ~> balance
+        //connect every Balance Output via a Worker to a MergeResult's Input
+        for (i <- 0 until numberOfWorker)
+          balance.out(i) ~> worker ~> mergedResult.in(i)
+
+        PriorityWorkerTaskShape(
+          tasksIn = priorMerge.in(0),
+          priorTasks = priorMerge.preferred,
+          resultOut = mergedResult.out
+        )
+      }
+    }
+  }
+
+  /**
+    *Source -->    priorityPool1.taskIn -> MergePref.in(0)                            Balance.out(0) -> in.worker.out -> in(0).MergeResult
+    *                                                 } MergePref.out ~> in.Balance {                                                     } MergeResult.out ~> tasksIn.priorityPool2.resultOut ~> Sink.foreach(println)
+    *Source -->priorityPool1.priorTaskIn-> MergePref.preferred                        Balance.out(n) -> in.worker.out -> in(n).MergeResult
+    *
+    */
+
+
+ // construct a runnable the graph
+  val worker1 = Flow[String].map("Processing Setp 1 "+_)
+  val worker2 = Flow[String].map("Processing Setp 2 "+_)
+
+  val g =  RunnableGraph.fromGraph(GraphDSL.create() { implicit b ⇒
+    import GraphDSL.Implicits._
+
+    val priorityPool1 = b.add(PriorityWorkerTaskPool(worker1, 2))
+    val priorityPool2 = b.add(PriorityWorkerTaskPool(worker2, 1))
+
+    Source(1 to 20).map("job: " + _) ~> priorityPool1.tasksIn
+    Source(1 to 20).map("priority job: " + _) ~> priorityPool1.priorTasks
+
+    priorityPool1.resultOut ~> priorityPool2.tasksIn
+    Source(1 to 20).map("one-step, priority " + _) ~> priorityPool2.priorTasks
+
+    priorityPool2.resultOut ~> Sink.foreach(println)
+    ClosedShape
+  }).run()
+
   //graph-dsl-components-shape#
 
 }
+
