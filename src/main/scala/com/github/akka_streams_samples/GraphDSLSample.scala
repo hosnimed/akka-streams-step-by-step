@@ -1,6 +1,7 @@
 package com.github.akka_streams_samples
 
 import akka.actor.ActorSystem
+import akka.pattern.FutureRef
 import akka.{Done, NotUsed}
 import akka.stream._
 import akka.stream.scaladsl._
@@ -217,9 +218,47 @@ object GraphDSLSample extends App {
 
     priorityPool2.resultOut ~> Sink.foreach(println)
     ClosedShape
-  }).run()
-
+  })
+//  g.run()
   //graph-dsl-components-shape#
 
+  //
+  object GraphMaterializedValues {
+
+    import GraphDSL.Implicits._
+
+    val foldFlow: Flow[Int, Int, Future[Int]] = Flow.fromGraph(
+      GraphDSL.create(Sink.fold[Int, Int](0)(Integer.sum)) { implicit builder ⇒ fold ⇒
+      FlowShape(fold.in, builder.materializedValue.mapAsyncUnordered[Int](4)(identity).outlet)
+    })
+
+  }
+  val flow: Flow[Int, Int, Future[Int]] = GraphMaterializedValues.foldFlow;
+  val source: Source[Int, Future[Int]] = Source[Int](1 to 10 ).viaMat(flow)(Keep.right)
+  val graph: RunnableGraph[Future[Int]] = source.to(Sink.ignore)
+/*
+  val done: Future[Int] = graph.run()
+  done.onComplete(future => {
+    if (future.isSuccess) println(future.get)
+    system.terminate
+  })
+  */
+  //#zipping-live
+val liveGraph = RunnableGraph.fromGraph(GraphDSL.create(){ implicit builder =>
+  import GraphDSL.Implicits._
+
+  val zip = builder.add(ZipWith[Int, Int, Int]((backward, feedback) => backward))
+  val broadcast = builder.add(Broadcast[Int](2))
+  val concat = builder.add(Concat[Int](2))
+
+  Source(1 to 10) ~> zip.in0 /*backward arc*/
+  zip.out.map(i => {println(i); i}) ~> broadcast ~> Sink.ignore
+  /*feedback arc*/   zip.in1 <~ concat <~ Source.single[Int](0) /* just to kick-off the cycle*/
+                                concat <~ broadcast
+
+  ClosedShape
+})
+  liveGraph.run()
+  //zipping-live#
 }
 
