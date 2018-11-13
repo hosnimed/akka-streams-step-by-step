@@ -3,17 +3,19 @@ package com.github.akka_streams_samples
 import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.pattern.FutureRef
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, Attributes}
 import akka.stream.scaladsl.Tcp.OutgoingConnection
 import akka.stream.scaladsl._
 import akka.util.ByteString
 
-import scala.concurrent.{Future, Promise}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
-object StreamComposition {
+object StreamComposition extends App{
 
   implicit val system = ActorSystem("stream-composition")
   implicit val materializer = ActorMaterializer()
+
+  implicit val ec : ExecutionContext = ExecutionContext.Implicits.global
   /**
     * Nested source
   */
@@ -48,5 +50,25 @@ object StreamComposition {
   /**
     * Wrap all together : Materialize to Future[Combination]
     */
-  val combinerGraph = nestedSource.toMat(nestedSink)(combiner)
+  val combinerGraph: RunnableGraph[Future[Combination]] = nestedSource.toMat(nestedSink)(combiner)
+ /* combinerGraph.run().onComplete(d => {
+    print(d)
+    system.terminate()
+  })*/
+
+  /**
+    * Attributes
+  */
+    import Attributes._
+  val nSrc = Source(1 to 3).map(_ * 2).named("nSrc") //no input buffer set
+  val nFlw = Flow[Int].filter( _ % 2 == 0)
+    .via(Flow[Int].map( _ - 1).withAttributes(inputBuffer(4, 4))) // nested flow with input buffer
+    .named("nFlw") // no input buffer
+  val nSnk: Sink[Int, Future[Int]] = nFlw.toMat(Sink.fold[Int, Int](0)(_ + _))(Keep.right).withAttributes(name("nSnk") and inputBuffer(2,2))
+  nSrc.via(nFlw).toMat(nSnk)(Keep.right)
+    .run()
+    .onComplete(d => {
+      print(d)
+      system.terminate()
+    })
 }
