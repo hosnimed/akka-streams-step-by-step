@@ -258,7 +258,7 @@ val liveGraph = RunnableGraph.fromGraph(GraphDSL.create(){ implicit builder =>
 
   ClosedShape
 })
-  liveGraph.run()
+//  liveGraph.run()
   //zipping-live#
 }
 
