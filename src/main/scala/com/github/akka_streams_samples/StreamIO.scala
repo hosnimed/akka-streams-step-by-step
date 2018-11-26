@@ -2,13 +2,13 @@ package com.github.akka_streams_samples
 
 import akka.NotUsed
 import akka.actor.ActorSystem
+import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Tcp._
 import akka.stream.scaladsl._
-import akka.stream.{ActorMaterializer, KillSwitches}
-import akka.util.{ByteString, Timeout}
+import akka.util.ByteString
 
-import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Future}
+import scala.io.StdIn
 
 
 object StreamIO extends App {
@@ -18,8 +18,8 @@ object StreamIO extends App {
 
   implicit val ec : ExecutionContext = ExecutionContext.Implicits.global
 
-  private val host = "127.0.0.1"
-  private val port = 8888
+  val (host, port) = SocketUtil.temporaryServerHostnameAndPort()
+  /*
   val connections : Source[IncomingConnection, Future[ServerBinding]] = Tcp().bind(host, port)
 //  val binding : Future[ServerBinding] = connections.to(Sink.ignore).run()
 
@@ -37,5 +37,30 @@ object StreamIO extends App {
 
     connection.handleWith(echoServer)
   }
+*/
+  val localhost = SocketUtil.temporaryServerAddress()
+  val connection: Flow[ByteString, ByteString, Future[OutgoingConnection]] = Tcp().outgoingConnection(localhost)
+
+  val myREPLParser: Flow[String, ByteString, NotUsed] = Flow[String]
+      .takeWhile( _ != ":q")
+      .concat(Source.single("Good bye!"))
+      .map(cmd => ByteString(cmd.concat(System.lineSeparator())))
+
+  val myREPL: Flow[ByteString, ByteString, NotUsed] = Flow[ByteString]
+    .via(Framing.delimiter(
+      ByteString(System.lineSeparator()),
+      256,
+      true
+    ))
+    .map(_.utf8String)
+    .map(text => println(s"Server : ${text}"))
+    .map(_ => StdIn.readLine("> "))
+    .via(myREPLParser)
+
+  val connected: Future[OutgoingConnection] = connection.join(myREPL).run()
+//  connected.onComplete(_ => system.terminate())
+
+
 
 }
+
